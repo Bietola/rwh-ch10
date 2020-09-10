@@ -117,7 +117,7 @@ parseBytes :: Int -> Parser L.ByteString
 parseBytes amount = L.pack <$> repeatParse parseByte amount
 
 skipSpaces :: Parser ()
-skipSpaces = fmap (\_ -> ()) (parseWhile isSpace)
+skipSpaces = (\_ -> ()) <$> (parseWhile isSpace parseChar)
 
 parseP5 :: Parser Greymap
 parseP5 =
@@ -126,18 +126,9 @@ parseP5 =
       skipSpaces *>> getNum *>= \greyMax ->
         (if greyMax > 255
            then bail "Maximum grey value too high"
-           else parseByte 1) *>>
-        parseByte (width * height) *>= \bytes ->
+           else parseByte) *>>
+        parseBytes (width * height) *>= \bytes ->
           idParser (Greymap width height greyMax bytes)
-
-----------------------
--- Helper functions --
-----------------------
-lst2num :: [Int] -> Int
-lst2num = foldr 0 $ \(num, dig) -> num * 10 + dig
-
-lst2bstr :: [Word8] -> L.ByteString
-lst2bstr = undefined
 
 ----------------
 -- Quick test --
