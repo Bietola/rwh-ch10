@@ -1,9 +1,10 @@
 module Lib where
 
 import qualified Data.ByteString.Lazy as L
+import qualified Data.ByteString.Internal as L (w2c)
 import qualified Data.ByteString.Lazy.Char8 as L8
 
-import Data.Char (isSpace)
+import Data.Char (isDigit, isSpace)
 import Data.Int
 import Data.Word
 
@@ -24,15 +25,15 @@ instance Show Greymap where
     -- "Greymap " ++ show w ++ "x" ++ show h ++ " " ++ show m ++ " [...]"
    = "Greymap " ++ show w ++ "x" ++ show h ++ " " ++ show m ++ ": " ++ show b
 
----------------------
--- Parsing Library --
----------------------
+--------------------------
+-- Core Parsing Library --
+--------------------------
 data ParseState =
   ParseState
     { contents :: L.ByteString
     , offset :: Int64
     }
-    deriving (Show)
+  deriving (Show)
 
 type ParseResult a = Either String (a, ParseState)
 
@@ -40,6 +41,12 @@ newtype Parser a =
   Parser
     { doParse :: ParseState -> ParseResult a
     }
+
+instance Functor Parser where
+  fmap f parser = parser *>= \result -> idParser $ f result
+
+literal :: L.ByteString -> Parser ()
+literal = undefined
 
 -- parseNum >>= (\num ->
 --   skipSpaces >>= (\() ->
@@ -62,7 +69,7 @@ idParser val = Parser $ \state -> Right (val, state)
 bail :: String -> Parser a
 bail err = Parser $ \_ -> Left err
 
--- (repeat 10 getByte) *>= \bytes ->
+-- (repeat 10 parseByte) *>= \bytes ->
 --   getState *>= \state ->
 --     putState ParseState { offset = (offset state) + 10 } *>>
 --       skipSpaces *>>
@@ -72,8 +79,11 @@ getState = Parser $ \state -> Right (state, state)
 putState :: ParseState -> Parser ()
 putState newState = Parser $ \oldState -> Right ((), newState)
 
-getByte :: Parser Word8
-getByte =
+parseChar :: Parser Char
+parseChar = fmap L.w2c parseByte
+
+parseByte :: Parser Word8
+parseByte =
   getState *>= \initState ->
     case L.uncons (contents initState) of
       Nothing -> bail "Not enough bytes."
@@ -81,32 +91,30 @@ getByte =
         putState ParseState {contents = rest, offset = offset initState + 1} *>>
         idParser byte
 
--- TODO: Advance offset
+parseIf :: (a -> Bool) -> Parser a -> Parser a
+parseIf parser = undefined
+
+zeroOrMore :: Parser a -> Parser [a]
+zeroOrMore = undefined
+
+parseWhile :: (a -> Bool) -> Parser a -> Parser [a]
+parseWhile pred parser = zeroOrMore (parseIf pred parser)
+
+-----------------------------
+-- Greymap Parsing Library --
+-----------------------------
 matchHeaderVersion :: L.ByteString -> Parser ()
-matchHeaderVersion version =
-  Parser $ \initState ->
-    let newState =
-          ParseState
-            { contents = L.drop (fromIntegral prefixLen) (contents initState)
-            , offset = offset initState + prefixLen
-            }
-        prefixLen = fromIntegral $ L8.length version
-     in if version `L8.isPrefixOf` (contents initState)
-          then Right ((), newState)
-          else Left $ "Invalid header version " ++ show version ++ "."
+matchHeaderVersion = literal
 
--- getNum :: Parser Int
--- getNum = list2num <$> zeroOrMore (pred isDigit)
 getNum :: Parser Int
-getNum = undefined
+getNum =
+  read <$> parseWhile isDigit parseChar
 
--- TODO: Make implementation more modular (see below)
-getBytes :: Int -> Parser L.ByteString
-getBytes amount = undefined
+parseBytes :: Int -> Parser L.ByteString
+parseBytes amount = fmap lst2bstr (repeat amount parseByte)
 
--- TODO: Make implementation more modular, e.g. skipSapces = oneOrMore (pred isSpace getByte)
 skipSpaces :: Parser ()
-skipSpaces = undefined
+skipSpaces = fmap (\_ -> ()) (parseWhile isSpace)
 
 parseP5 :: Parser Greymap
 parseP5 =
@@ -115,10 +123,22 @@ parseP5 =
       skipSpaces *>> getNum *>= \greyMax ->
         (if greyMax > 255
            then bail "Maximum grey value too high"
-           else getBytes 1) *>>
-        getBytes (width * height) *>= \bytes ->
+           else parseByte 1) *>>
+        parseByte (width * height) *>= \bytes ->
           idParser (Greymap width height greyMax bytes)
 
+----------------------
+-- Helper functions --
+----------------------
+lst2num :: [Int] -> Int
+lst2num = foldr 0 $ \(num, dig) -> num * 10 + dig
+
+lst2bstr :: [Word8] -> L.ByteString
+lst2bstr = undefined
+
+----------------
+-- Quick test --
+----------------
 test :: IO ()
 test =
   putStrLn $
