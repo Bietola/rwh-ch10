@@ -100,6 +100,9 @@ zeroOrMore = undefined
 parseWhile :: (a -> Bool) -> Parser a -> Parser [a]
 parseWhile pred parser = zeroOrMore (parseIf pred parser)
 
+repeatParse :: Parser a -> Int -> Parser [a]
+repeatParse = undefined
+
 -----------------------------
 -- Greymap Parsing Library --
 -----------------------------
@@ -111,7 +114,7 @@ getNum =
   read <$> parseWhile isDigit parseChar
 
 parseBytes :: Int -> Parser L.ByteString
-parseBytes amount = fmap lst2bstr (repeat amount parseByte)
+parseBytes amount = L.pack <$> repeatParse parseByte amount
 
 skipSpaces :: Parser ()
 skipSpaces = fmap (\_ -> ()) (parseWhile isSpace)
